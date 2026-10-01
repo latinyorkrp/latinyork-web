@@ -283,6 +283,16 @@ body{
 .role-card p{color:#858e8e;font-size:8px;line-height:1.65}
 
 
+.sound-hint{
+    position:fixed;left:50%;bottom:22px;transform:translateX(-50%);z-index:50;
+    padding:10px 18px;border-radius:30px;cursor:pointer;
+    background:rgba(0,208,132,.95);color:#04100b;
+    font-size:11px;font-weight:900;letter-spacing:.4px;
+    box-shadow:0 6px 24px rgba(0,0,0,.5);animation:hintpulse 1.8s infinite;
+}
+.sound-hint.hide{display:none}
+@keyframes hintpulse{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.05)}}
+
 /* =========================================================
    YORKY AI
 ========================================================= */
@@ -420,6 +430,31 @@ body{
     .downloads{grid-template-columns:1fr}
     .step-grid,.role-grid{grid-template-columns:1fr}
 }
+
+/* =========================================================
+   TRANSPARENCIA DE LA INTERFAZ
+   --ui controla todo: 1 = normal, 0.5 = más transparente, 0 = solo video.
+   También se cambia con el botón ◉ de la barra superior.
+========================================================= */
+:root{--ui:1}
+.bg-overlay{
+    background:
+      linear-gradient(90deg,rgba(0,10,11,calc(var(--ui)*.40)),rgba(0,13,14,calc(var(--ui)*.12)) 52%,rgba(0,5,6,calc(var(--ui)*.38))),
+      linear-gradient(180deg,rgba(0,0,0,calc(var(--ui)*.15)),rgba(0,0,0,calc(var(--ui)*.38)));
+}
+.bg-vignette{box-shadow:inset 0 0 170px rgba(0,0,0,calc(var(--ui)*.5))}
+.topbar{background:rgba(3,8,9,calc(var(--ui)*.45));backdrop-filter:blur(6px)}
+.hero-main,.hero-side{background:rgba(3,11,12,calc(var(--ui)*.34));backdrop-filter:blur(4px)}
+.steps{background:rgba(3,9,10,calc(var(--ui)*.40))}
+.download-card{background:rgba(4,8,9,calc(var(--ui)*.48))}
+.news,.technical{background:rgba(4,8,9,calc(var(--ui)*.48))}
+.guide-title,.guide-sidebar,.guide-main{background:rgba(4,9,10,calc(var(--ui)*.45))}
+.yk-side,.yk-chat{background:rgba(4,8,9,calc(var(--ui)*.46));backdrop-filter:blur(5px)}
+.msg{background:rgba(0,0,0,calc(var(--ui)*.30))}
+.msg.user{background:rgba(0,208,132,.20)}
+.yk-input input{background:rgba(10,30,70,calc(var(--ui)*.30))}
+.hero-main,.hero-side,.steps,.download-card,.news,.technical,.guide-title,
+.guide-sidebar,.guide-main,.yk-side,.yk-chat,.topbar{text-shadow:0 1px 4px rgba(0,0,0,.65)}
 </style>
 </head>
 
@@ -455,6 +490,7 @@ const MTA_DOWNLOAD_URL = "#";
 </script>
 
 <div id="youtube-bg"></div>
+<div class="sound-hint" id="soundHint">🔊 Toca aquí para activar el sonido</div>
 <div class="bg-overlay"></div>
 <div class="bg-vignette"></div>
 
@@ -480,9 +516,9 @@ const MTA_DOWNLOAD_URL = "#";
     <div class="tools">
         <div class="tool">☀ <b>AMBIENTE</b></div>
         <div class="tool"><b>23°</b> FPS</div>
-        <div class="tool">◉</div>
-        <div class="tool">🔊</div>
-        <div class="tool">🎵 <b>MÚSICA</b></div>
+        <div class="tool" id="uiBtn" title="Cambiar transparencia de la interfaz" style="cursor:pointer">◉</div>
+        <div class="tool snd" id="soundBtn" title="Activar/silenciar sonido" style="cursor:pointer">🔇</div>
+        <div class="tool snd" id="musicBtn" title="Activar/silenciar música" style="cursor:pointer">🎵 <b id="musicLbl">MÚSICA OFF</b></div>
         <div class="status">
             <small>ESTADO DEL SERVIDOR</small>
             <strong>● EN LÍNEA SEGURO</strong>
@@ -783,6 +819,38 @@ const MTA_DOWNLOAD_URL = "#";
    Arreglo del error de YouTube (153 / "no disponible"):
    se usa la API oficial IFrame, que envía el origen correcto, y si el video
    falla se cae a un fondo animado en lugar de quedar en negro. */
+let soundOn=false, bgVideoEl=null;
+
+function ytCmd(func,args){
+    document.querySelectorAll("#youtube-bg iframe").forEach(f=>{
+        try{
+            f.contentWindow.postMessage(JSON.stringify({event:"command",func:func,args:args||[]}),"*");
+        }catch(e){}
+    });
+}
+function setSound(on){
+    soundOn=on;
+    if(bgVideoEl){
+        bgVideoEl.muted=!on;
+        if(on) bgVideoEl.play().catch(()=>{});
+    }
+    if(on){ ytCmd("unMute"); ytCmd("setVolume",[70]); ytCmd("playVideo"); }
+    else  { ytCmd("mute"); }
+    document.getElementById("soundBtn").textContent=on?"🔊":"🔇";
+    document.getElementById("musicLbl").textContent=on?"MÚSICA ON":"MÚSICA OFF";
+    document.getElementById("soundHint").classList.toggle("hide",on);
+}
+document.querySelectorAll(".snd").forEach(b=>b.addEventListener("click",()=>setSound(!soundOn)));
+document.getElementById("soundHint").addEventListener("click",()=>setSound(true));
+/* El navegador exige un gesto del usuario para permitir audio:
+   el primer clic/tecla/toque en cualquier parte lo activa. */
+["pointerdown","keydown","touchstart"].forEach(evt=>{
+    document.addEventListener(evt,function first(e){
+        document.removeEventListener(evt,first);
+        if(!soundOn && !(e.target.closest && e.target.closest(".snd,#soundHint"))) setSound(true);
+    });
+});
+
 function showBackgroundFallback(reason){
     console.warn("[Fondo] Video de YouTube no disponible:", reason);
     const box=document.getElementById("youtube-bg");
@@ -800,6 +868,7 @@ function loadYoutubeBackground(){
         v.style.cssText="position:absolute;inset:0;width:100%;height:100%;object-fit:cover";
         v.addEventListener("error",()=>showBackgroundFallback("archivo local no encontrado"));
         box.appendChild(v);
+        bgVideoEl=v;
         v.play().catch(()=>{});
         return;
     }
@@ -842,6 +911,7 @@ function loadYoutubeBackground(){
                 f.contentWindow.postMessage(JSON.stringify({event:"listening",id:1,channel:"widget"}),"*");
                 ["onError","onStateChange"].forEach(ev=>
                     f.contentWindow.postMessage(JSON.stringify({event:"command",func:"addEventListener",args:[ev],id:1,channel:"widget"}),"*"));
+                if(soundOn) setTimeout(()=>setSound(true),400);
             }catch(e){}
         });
         box.appendChild(f);
@@ -858,7 +928,7 @@ function loadYoutubeBackground(){
         const state = d.event==="onStateChange" ? d.info
                     : (d.event==="infoDelivery" && d.info && d.info.playerState!==undefined) ? d.info.playerState
                     : null;
-        if(state===1||state===3){ playing=true; clearTimeout(timer); }
+        if(state===1||state===3){ playing=true; clearTimeout(timer); if(soundOn) ytCmd("unMute"); }
         if(d.event==="onError"){ sawError=true; console.warn("[Fondo] error YouTube, código:",d.info); tryHost(); }
     });
 
@@ -1041,6 +1111,14 @@ document.querySelectorAll(".yk-chip").forEach(b=>b.addEventListener("click",()=>
 document.querySelectorAll(".yk-tool").forEach(b=>b.addEventListener("click",()=>ykSendMessage(b.dataset.prompt)));
 document.getElementById("ykClear").addEventListener("click",ykReset);
 ykReset();
+
+/* Transparencia: el botón ◉ alterna entre 3 niveles */
+const UI_LEVELS=[1,0.5,0.15];
+let uiLevel=0;
+document.getElementById("uiBtn").addEventListener("click",()=>{
+    uiLevel=(uiLevel+1)%UI_LEVELS.length;
+    document.documentElement.style.setProperty("--ui",UI_LEVELS[uiLevel]);
+});
 
 loadYoutubeBackground();
 </script>
